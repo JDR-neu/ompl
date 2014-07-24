@@ -7,8 +7,11 @@
 
     namespace ob = ompl::base;
     namespace oc = ompl::control;
+    
     const double b= 0.54;
     const double dt=0.1;
+    const int max_size=10001;
+    const double end_controls=2000;
 
 
 
@@ -96,10 +99,16 @@
       double *result;
       double *intRes;
       
-      
+      oc::Control *control_res;
+      oc::RealVectorControlSpace *controlSpace;
+
       POSQ(const oc::SpaceInformationPtr &si) : oc::StatePropagator(si)
       {
-            
+        
+        ob::StateSpacePtr space(new ob::SE2StateSpace());
+        controlSpace=new oc::RealVectorControlSpace(space,max_size);
+        control_res= (*controlSpace).allocControl();
+        
         std::cout <<"POSQ Steer function activated"<<std::endl;
       	result= (double*)malloc(sizeof(double)*5);
         intRes= (double*)malloc(sizeof(double)*5);
@@ -125,6 +134,8 @@
       }
 
 
+
+
       void propagate(const ob::State *state, const oc::Control *control, const double duration, ob::State *result) const
       {
         
@@ -134,33 +145,40 @@
         const ob::SE2StateSpace::StateType *se2state = state->as<ob::SE2StateSpace::StateType>();
         const double* pos = se2state->as<ob::RealVectorStateSpace::StateType>(0)->values;
         const double rot = se2state->as<ob::SO2StateSpace::StateType>(1)->value;
-        // const double* ctrl = control->as<oc::RealVectorControlSpace::ControlType>()->values;
 
 
-        ob::StateSpacePtr space(new ob::SE2StateSpace());
-        oc::RealVectorControlSpace *controlSpace=new oc::RealVectorControlSpace(space,500);
-        // controlSpace->printControl(control, std::cout);
-        oc::Control *control_res;
-        control_res= (*controlSpace).allocControl();
-        controlSpace->copyControl(control_res, control);
 
-        oc::RealVectorControlSpace::ControlType *rcontrol = static_cast< oc::RealVectorControlSpace::ControlType*>(control_res);
+        oc::Control *control_int;
+        control_int= (*controlSpace).allocControl();
+        controlSpace->copyControl(control_int, control);
+        // controlSpace->printControl(control_res, std::cout);
 
-        controlSpace->printControl(rcontrol, std::cout);
+
+        oc::RealVectorControlSpace::ControlType *rcontrol = static_cast< oc::RealVectorControlSpace::ControlType*>(control_int);
+
+        // // controlSpace->printControl(rcontrol, std::cout);
         const double* ctrl = rcontrol->as<oc::RealVectorControlSpace::ControlType>()->values;
         double x=pos[0];
         double y=pos[1];
         double yaw=rot;
+        
         int i=0;
-        while(ctrl[2*i]>-1){
 
-            x =  x + ctrl[2*i] * duration * cos(rot),
-            y =  y + ctrl[2*i] * duration * sin(rot);
+
+        while(true){
+
+           if(ctrl[2*i]==end_controls || ctrl[2*i+1]==end_controls){
+                     std::cout<<"value Ctrls = "<<ctrl[2*i]<<" "<< ctrl[2*i+1]<<std::endl;
+                     break;
+                 }
+
+            x =  x + ctrl[2*i] * duration * cos(yaw),
+            y =  y + ctrl[2*i] * duration * sin(yaw);
             yaw   =  yaw    + ctrl[2*i+1] * duration;
 
             i++;
             // std::cout<<"Ctrl "<<ctrl[2*i]<<" "<<ctrl[2*i+1]<<std::endl;
-            // std::cout<<"Intermediate State added: "<<x<<" "<<y<<" "<<yaw<<" "<<std::endl;
+             std::cout<<"Intermediate State added: "<<x<<" "<<y<<" "<<yaw<<" "<<std::endl;
         }
 
 
@@ -501,11 +519,7 @@
 
         }
 
-        // Saving the results
-        ob::StateSpacePtr space(new ob::SE2StateSpace());
-        oc::RealVectorControlSpace *controlSpace=new oc::RealVectorControlSpace(space,2*((int)controls.size())+1);
-        oc::Control *control_res;
-        control_res= (*controlSpace).allocControl();
+       
         oc::RealVectorControlSpace::ControlType *rcontrol = static_cast< oc::RealVectorControlSpace::ControlType*>(control_res);
         
         // std::cout<<"Size control for Steering: "<<(int)controls.size()<<std::endl;
@@ -519,11 +533,12 @@
 
         }
 
-        (*rcontrol).values[2*(int)controls.size()]   =  -1;
-
+        (*rcontrol).values[2*(int)controls.size()]   =  end_controls;
+        
         c_result=(*controlSpace).allocControl();
         controlSpace->copyControl(c_result, control_res);
-        // controlSpace->printControl(c_result, std::cout);
+        // controlSpace->printControl(control_res, std::cout);
+
         duration=(2*(int)controls.size()+1)*dt;
 
         return true;
