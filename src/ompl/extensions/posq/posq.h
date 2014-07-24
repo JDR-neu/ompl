@@ -14,8 +14,7 @@
     const double end_controls=2000;
 
 
-
- struct UnicycleState {
+struct UnicycleState {
         
         // pose
         double x;
@@ -50,9 +49,9 @@
         } 
 
 
-    };
+};
 
-    struct UnicycleControl {
+struct UnicycleControl {
         
         // v, translational velocity
         double v; 
@@ -88,23 +87,25 @@
 
 
 
-    };
+};
 
+/** \brief POSQ class that implements the POSQ steering function      */
 
-
-    class POSQ : public oc::StatePropagator {
+class POSQ : public oc::StatePropagator {
 
     public:
-
+      int i;
       double *result;
       double *intRes;
-      
+      int *ind;
       oc::Control *control_res;
       oc::RealVectorControlSpace *controlSpace;
+      oc::SpaceInformationPtr si_;
 
       POSQ(const oc::SpaceInformationPtr &si) : oc::StatePropagator(si)
       {
-        
+        i=0;
+        this->si_=si;
         ob::StateSpacePtr space(new ob::SE2StateSpace());
         controlSpace=new oc::RealVectorControlSpace(space,max_size);
         control_res= (*controlSpace).allocControl();
@@ -112,13 +113,13 @@
         std::cout <<"POSQ Steer function activated"<<std::endl;
       	result= (double*)malloc(sizeof(double)*5);
         intRes= (double*)malloc(sizeof(double)*5);
-
+        ind=(int*)malloc(sizeof(int)*1);
         std::cout <<"POSQ: result allocated"<<std::endl;
 
       }
       
 
-      void setRes(double *r) const {
+    void setRes(double *r) const {
 
         this->intRes[0]=r[0];
         
@@ -131,12 +132,28 @@
         this->intRes[4]=r[4];
 
 
-      }
+    }
+
+    const void resetIndControl(int i)  const {
+
+       ind[0]=i;
+
+    }
+
+    const void incrementIndControl() const  {
 
 
+       ind[0]=ind[0]+1;
 
+    }
 
-      void propagate(const ob::State *state, const oc::Control *control, const double duration, ob::State *result) const
+    /** \brief Propagate the model of the system forward, starting at a given state, with a given control, for a given number of steps.
+                \param state the state to start at
+                \param control the control to apply, in this Class the Control is not read from the propagate function but it is saved internally as control_res
+                \param In this case Duration of the single propagation
+                \param result the state at the end of the propagation */
+
+    void propagate(const ob::State *state, const oc::Control *control, const double duration, ob::State *result) const
       {
         
          // std::cout<<"Call propagate"<<std::endl;
@@ -148,54 +165,56 @@
 
 
 
-        oc::Control *control_int;
-        control_int= (*controlSpace).allocControl();
-        controlSpace->copyControl(control_int, control);
-        // controlSpace->printControl(control_res, std::cout);
+        // oc::Control *control_int;
+        // control_int= (*controlSpace).allocControl();
+        // (*controlSpace).nullControl(control_int);
+        // controlSpace->copyControl(control_int, control);
 
+        oc::RealVectorControlSpace::ControlType *rcontrol = static_cast< oc::RealVectorControlSpace::ControlType*>(control_res);
+        // controlSpace->printControl(rcontrol, std::cout);
 
-        oc::RealVectorControlSpace::ControlType *rcontrol = static_cast< oc::RealVectorControlSpace::ControlType*>(control_int);
-
-        // // controlSpace->printControl(rcontrol, std::cout);
         const double* ctrl = rcontrol->as<oc::RealVectorControlSpace::ControlType>()->values;
         double x=pos[0];
         double y=pos[1];
         double yaw=rot;
-        
-        int i=0;
+        yaw=set_angle_to_range(yaw,0);
 
 
-        while(true){
+    
 
-           if(ctrl[2*i]==end_controls || ctrl[2*i+1]==end_controls){
-                     std::cout<<"value Ctrls = "<<ctrl[2*i]<<" "<< ctrl[2*i+1]<<std::endl;
-                     break;
-                 }
+        double* step_v =controlSpace->getValueAddressAtIndex(rcontrol,2*ind[0]);
+        double* step_w =controlSpace->getValueAddressAtIndex(rcontrol,2*ind[0]+1);
 
-            x =  x + ctrl[2*i] * duration * cos(yaw),
-            y =  y + ctrl[2*i] * duration * sin(yaw);
-            yaw   =  yaw    + ctrl[2*i+1] * duration;
 
-            i++;
-            // std::cout<<"Ctrl "<<ctrl[2*i]<<" "<<ctrl[2*i+1]<<std::endl;
-             std::cout<<"Intermediate State added: "<<x<<" "<<y<<" "<<yaw<<" "<<std::endl;
+        std::cout<<"value i, Ctrls = "<<ind[0]<<" "<<(*step_v)<<" "<< (*step_w)<<std::endl;
+
+
+        if((*step_v)==end_controls || (*step_w) == end_controls){
+                     std::cout<<"value Ctrls = "<<ctrl[2*ind[0]]<<" "<< ctrl[2*ind[0]+1]<<std::endl;
+                     result->as<ob::SE2StateSpace::StateType>()->setXY(x,y);
+                     result->as<ob::SE2StateSpace::StateType>()->setYaw(yaw);
+
+         return ;
         }
 
+            x =  x + (*step_v) * duration * cos(yaw),
+            y =  y + (*step_v) * duration * sin(yaw);
+            yaw   =  yaw    + (*step_w) * duration;
+            yaw=set_angle_to_range(yaw,0);
 
-         result->as<ob::SE2StateSpace::StateType>()->setXY(x,y);
-         result->as<ob::SE2StateSpace::StateType>()->setYaw(yaw);
-
-         // std::cout<<"Final State added: "<<x<<" "<<y<<" "<<yaw<<" "<<std::endl;
-
-
+        incrementIndControl();
+        std::cout<<"Final State added: "<<x<<" "<<y<<" "<<yaw<<" "<<std::endl;
+        result->as<ob::SE2StateSpace::StateType>()->setXY(x,y);
+        result->as<ob::SE2StateSpace::StateType>()->setYaw(yaw);
 
 
+    }
 
-
-      }
-
-      
-      double normangle(double a, double mina) const {
+    /** \brief Normalize the angle a rispect to the minimum angle mina.
+    \param double a 
+    \param double mina 
+    */
+    double normangle(double a, double mina) const {
 
         double ap,minap;
         ap=a;
@@ -210,11 +229,36 @@
         }
 
         return ap;
-      }
+    }
 
-      
+    /** \brief Set the angle a in the range [min, min+2*M_PI].
+    \param double alpha 
+    \param double min
+    */
+    double set_angle_to_range(double alpha, double min) const {
 
-      double* posctrlstep (double x_c, double y_c, double t_c, 
+            while (alpha >= min + 2.0 * M_PI) {
+                alpha -= 2.0 * M_PI;
+            }
+            while (alpha < min) {
+                alpha += 2.0 * M_PI;
+            }
+            return alpha;
+    }
+
+
+    /** \brief Single step of the Steer Function.
+    \param double x_c, initial x-coord
+    \param double y_c, initial y-coord
+    \param double t_c, initial orientation
+    \param double x_end, final x-coord.
+    \param double y_end, final y-coord.
+    \param double t_end, final orientation
+    \param double c_t, integration time step
+    \param double b, length of the wheel axis
+    \param double dir, direction of the robot dir==1 forward
+    */
+    double* posctrlstep (double x_c, double y_c, double t_c, 
                    double x_end, double y_end, double t_end, double ct, double b, int dir) const {
         
 
@@ -370,9 +414,14 @@
     }
 
 
-
+    /** \brief Propagate the model of the system forward, starting at a given state, with a given control, for a given number of steps.
+                \param state from Initial state of the steering
+                \param state to Ending state of the steering
+                \param control c_result resulting vector of controls
+                \param double duration, number of control steps needed to steer the robot
+                 */
        
-      bool steer(const ob::State* from, const ob::State* to, oc::Control* c_result, double& duration) const
+    bool steer(const ob::State* from, const ob::State* to, oc::Control* c_result, double& duration) const
       {
 
        //std::cout <<"POSQ Steer function activated"<<std::endl;
@@ -404,7 +453,6 @@
         y_fin= to->as<ob::SE2StateSpace::StateType>()->getY();
         th_fin= to->as<ob::SE2StateSpace::StateType>()->getYaw();
 
-        // std::cout<<"From state "<<x<<" "<<y<<" "<<" "<<th<<" to "<<" "<<x_fin<<" "<<" "<<y_fin<<" "<<th_fin<<" "<<std::endl;
 
         double vv,ww;
         vv=0;
@@ -519,7 +567,8 @@
 
         }
 
-       
+    
+        (*controlSpace).nullControl(control_res);
         oc::RealVectorControlSpace::ControlType *rcontrol = static_cast< oc::RealVectorControlSpace::ControlType*>(control_res);
         
         // std::cout<<"Size control for Steering: "<<(int)controls.size()<<std::endl;
@@ -537,18 +586,20 @@
         
         c_result=(*controlSpace).allocControl();
         controlSpace->copyControl(c_result, control_res);
-        // controlSpace->printControl(control_res, std::cout);
+        // controlSpace->printControl(c_result,std::cout);
+        duration=(int)(controls.size()/2);
+        std::cout<<"number of controls and Steps :"<<(int)controls.size()<<", "<<duration<<std::endl;
 
-        duration=(2*(int)controls.size()+1)*dt;
-
+        resetIndControl(0);
         return true;
 
 
 
     }
 
-      
-      bool canSteer() const
+    /** \brief Returns true */
+
+    bool canSteer() const
     {
         return true;
        
@@ -556,6 +607,6 @@
 
 
 
-    };
+};
 
 
