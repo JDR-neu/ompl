@@ -1,19 +1,70 @@
-    #include <ompl/control/SpaceInformation.h>
-    #include <ompl/base/goals/GoalState.h>
-    #include <ompl/base/spaces/SE2StateSpace.h>
-    #include <ompl/control/StatePropagator.h>
-    #include <ompl/control/spaces/RealVectorControlSpace.h>
+   /*********************************************************************
+* Software License Agreement (BSD License)
+*
+*  Copyright (c) 2014, Social Robotics Laboratory, University of Freiburg.
+*  All rights reserved.
+*
+*  Redistribution and use in source and binary forms, with or without
+*  modification, are permitted provided that the following conditions
+*  are met:
+*
+*   * Redistributions of source code must retain the above copyright
+*     notice, this list of conditions and the following disclaimer.
+*   * Redistributions in binary form must reproduce the above
+*     copyright notice, this list of conditions and the following
+*     disclaimer in the documentation and/or other materials provided
+*     with the distribution.
+*   * Neither the name of the Willow Garage nor the names of its
+*     contributors may be used to endorse or promote products derived
+*     from this software without specific prior written permission.
+*
+*  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+*  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+*  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+*  FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+*  COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+*  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+*  BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+*  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+*  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+*  LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+*  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+*  POSSIBILITY OF SUCH DAMAGE.
+*********************************************************************/
+
+/* Author: Luigi Palmieri */
 
 
-    namespace ob = ompl::base;
-    namespace oc = ompl::control;
-    
-    const double b= 0.54;
-    const double dt=0.1;
-    const int max_size=10001;
-    const double end_controls=2000;
 
 
+#include <ompl/control/SpaceInformation.h>
+#include <ompl/base/goals/GoalState.h>
+#include <ompl/base/spaces/SE2StateSpace.h>
+#include <ompl/control/StatePropagator.h>
+#include <ompl/control/spaces/RealVectorControlSpace.h>
+
+/** \brief Definition of the namespaces */
+
+namespace ob = ompl::base;
+namespace oc = ompl::control;
+
+
+/** \brief length of the wheels axis */
+
+const double B= 0.54;
+
+/** \brief Integration Time Step  */
+const double DT=0.1;
+
+/** \brief Max Size of the Control (HacK: in this case equal to the dimension) */
+const int MAX_SIZE=10001;
+
+/** \brief Value used to mark the end of the vector, no used at the moment */
+
+const double END_CONTROLS=2000;
+
+
+/** \brief Internal definition of the Unicycle state type */
 struct UnicycleState {
         
         // pose
@@ -51,6 +102,8 @@ struct UnicycleState {
 
 };
 
+
+/** \brief Internal definition of the Unicycle control type*/
 struct UnicycleControl {
         
         // v, translational velocity
@@ -93,57 +146,71 @@ struct UnicycleControl {
 
 class POSQ : public oc::StatePropagator {
 
-    public:
-      int i;
-      double *result;
-      double *intRes;
-      int *ind;
+public:
+
+    /** \brief Internal Results of the integration */
+      double *result_;
+      double *intRes_;
+    
+    /** \brief Internal Counter to access the current control to propagate */
+
+      int *ind_;
+
+    /** \brief Current control to propagate */
       oc::Control *control_res;
+
+    /** \brief ControlSpace and SpaceInformation */
+
       oc::RealVectorControlSpace *controlSpace;
       oc::SpaceInformationPtr si_;
 
       POSQ(const oc::SpaceInformationPtr &si) : oc::StatePropagator(si)
       {
-        i=0;
         this->si_=si;
         ob::StateSpacePtr space(new ob::SE2StateSpace());
-        controlSpace=new oc::RealVectorControlSpace(space,max_size);
+        controlSpace=new oc::RealVectorControlSpace(space,MAX_SIZE);
         control_res= (*controlSpace).allocControl();
         
         std::cout <<"POSQ Steer function activated"<<std::endl;
-      	result= (double*)malloc(sizeof(double)*5);
-        intRes= (double*)malloc(sizeof(double)*5);
-        ind=(int*)malloc(sizeof(int)*1);
+      	result_= (double*)malloc(sizeof(double)*5);
+        intRes_= (double*)malloc(sizeof(double)*5);
+        ind_=(int*)malloc(sizeof(int)*1);
         std::cout <<"POSQ: result allocated"<<std::endl;
 
       }
       
 
+    /** \brief Set the current result of the integration 
+    */
     void setRes(double *r) const {
 
-        this->intRes[0]=r[0];
+        this->intRes_[0]=r[0];
         
-        this->intRes[1]=r[1];
+        this->intRes_[1]=r[1];
 
-        this->intRes[2]=r[2];
+        this->intRes_[2]=r[2];
 
-        this->intRes[3]=r[3];
+        this->intRes_[3]=r[3];
 
-        this->intRes[4]=r[4];
+        this->intRes_[4]=r[4];
 
 
     }
 
+    /** \brief Reset internal counter to i
+    */
     const void resetIndControl(int i)  const {
 
-       ind[0]=i;
+       ind_[0]=i;
 
     }
 
+    /** \brief Increment internal counter
+    */
     const void incrementIndControl() const  {
 
 
-       ind[0]=ind[0]+1;
+       ind_[0]=ind_[0]+1;
 
     }
 
@@ -164,16 +231,9 @@ class POSQ : public oc::StatePropagator {
         const double rot = se2state->as<ob::SO2StateSpace::StateType>(1)->value;
 
 
-
-        // oc::Control *control_int;
-        // control_int= (*controlSpace).allocControl();
-        // (*controlSpace).nullControl(control_int);
-        // controlSpace->copyControl(control_int, control);
-
         oc::RealVectorControlSpace::ControlType *rcontrol = static_cast< oc::RealVectorControlSpace::ControlType*>(control_res);
         // controlSpace->printControl(rcontrol, std::cout);
 
-        const double* ctrl = rcontrol->as<oc::RealVectorControlSpace::ControlType>()->values;
         double x=pos[0];
         double y=pos[1];
         double yaw=rot;
@@ -182,15 +242,15 @@ class POSQ : public oc::StatePropagator {
 
     
 
-        double* step_v =controlSpace->getValueAddressAtIndex(rcontrol,2*ind[0]);
-        double* step_w =controlSpace->getValueAddressAtIndex(rcontrol,2*ind[0]+1);
+        double* step_v =controlSpace->getValueAddressAtIndex(rcontrol,2*ind_[0]);
+        double* step_w =controlSpace->getValueAddressAtIndex(rcontrol,2*ind_[0]+1);
 
 
-        std::cout<<"value i, Ctrls = "<<ind[0]<<" "<<(*step_v)<<" "<< (*step_w)<<std::endl;
+        std::cout<<"value i, Ctrls = "<<ind_[0]<<" "<<(*step_v)<<" "<< (*step_w)<<std::endl;
 
 
-        if((*step_v)==end_controls || (*step_w) == end_controls){
-                     std::cout<<"value Ctrls = "<<ctrl[2*ind[0]]<<" "<< ctrl[2*ind[0]+1]<<std::endl;
+        if((*step_v)==END_CONTROLS || (*step_w) == END_CONTROLS){
+                     std::cout<<"value Ctrls = "<<(*step_v)<<" "<< (*step_w)<<std::endl;
                      result->as<ob::SE2StateSpace::StateType>()->setXY(x,y);
                      result->as<ob::SE2StateSpace::StateType>()->setYaw(yaw);
 
@@ -402,14 +462,14 @@ class POSQ : public oc::StatePropagator {
 
 
 
-        result[0]=vl;
-        result[1]=vr;
-        result[2]=(vl+vr)/2;
-        result[3]=(vr-vl)/b;
-        result[4]=eot;
+        result_[0]=vl;
+        result_[1]=vr;
+        result_[2]=(vl+vr)/2;
+        result_[3]=(vr-vl)/b;
+        result_[4]=eot;
 
 
-        return result;
+        return result_;
 
     }
 
@@ -475,7 +535,7 @@ class POSQ : public oc::StatePropagator {
                 dSm=(dSl+dSr)/2;
 
 
-                dSd=(dSr-dSl)/b;
+                dSd=(dSr-dSl)/B;
 
 
 
@@ -487,19 +547,19 @@ class POSQ : public oc::StatePropagator {
 
 
                 // intRes= posctrlstep (x,y,th,x_fin,y_fin,th_fin, t,b,dir);
-                setRes(posctrlstep (x,y,th,x_fin,y_fin,th_fin, t,b,dir));
+                setRes(posctrlstep (x,y,th,x_fin,y_fin,th_fin, t,B,dir));
                 //Save the velocity commands,eot
-                vv=intRes[2];
-                ww=intRes[3];
+                vv=intRes_[2];
+                ww=intRes_[3];
 
-                eot=intRes[4];
-                vl=intRes[0];
-                vr=intRes[1];
+                eot=intRes_[4];
+                vl=intRes_[0];
+                vr=intRes_[1];
 
 
 
                 //Increase the timer
-                t=t+dt;
+                t=t+DT;
     	
         	    // Count the number of steps
         	    n_steps++;
@@ -510,8 +570,8 @@ class POSQ : public oc::StatePropagator {
 
 
                 // increase encoder values
-                enc_l=enc_l+dt*vl;
-                enc_r=enc_r+dt*vr;
+                enc_l=enc_l+DT*vl;
+                enc_r=enc_r+DT*vr;
 
                 sl=enc_l;
                 sr=enc_r;
@@ -528,12 +588,12 @@ class POSQ : public oc::StatePropagator {
             
         	    /// save the last state!!!
         	    double xf,yf,yawf,vf,wf;
-                vf=intRes[2];
-                wf=intRes[3];
+                vf=intRes_[2];
+                wf=intRes_[3];
                 dSl=sl-oldSl;
                 dSr=sr-oldSr;
                 dSm=(dSl+dSr)/2;
-                dSd=(dSr-dSl)/b;
+                dSd=(dSr-dSl)/B;
                 xf=x+dSm*cos(th+dSd/2);
                 yf=y+dSm*sin(th+dSd/2);
                 yawf=normangle(th+dSd, -M_PI);
@@ -582,7 +642,7 @@ class POSQ : public oc::StatePropagator {
 
         }
 
-        (*rcontrol).values[2*(int)controls.size()]   =  end_controls;
+        (*rcontrol).values[2*(int)controls.size()]   =  END_CONTROLS;
         
         c_result=(*controlSpace).allocControl();
         controlSpace->copyControl(c_result, control_res);
