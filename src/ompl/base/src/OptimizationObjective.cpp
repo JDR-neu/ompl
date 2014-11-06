@@ -33,8 +33,10 @@
 *********************************************************************/
 
 /* Author: Luis G. Torres, Ioan Sucan */
+/* Edited by: Jonathan Gammell (allocInformedStateSampler) */
 
 #include "ompl/base/OptimizationObjective.h"
+#include "ompl/geometric/PathGeometric.h"
 #include "ompl/tools/config/MagicConstants.h"
 #include "ompl/base/goals/GoalRegion.h"
 #include <limits>
@@ -63,6 +65,41 @@ ompl::base::Cost ompl::base::OptimizationObjective::getCostThreshold() const
 void ompl::base::OptimizationObjective::setCostThreshold(Cost c)
 {
     threshold_ = c;
+}
+
+ompl::base::Cost ompl::base::OptimizationObjective::getCost(const Path &path) const
+{
+    // Cast path down to a PathGeometric
+    const geometric::PathGeometric *pathGeom = dynamic_cast<const geometric::PathGeometric*>(&path);
+
+    // Give up if this isn't a PathGeometric or if the path is empty.
+    if (!pathGeom)
+    {
+        OMPL_ERROR("Error: Cost computation is only implemented for paths of type PathGeometric.");
+        return this->identityCost();
+    }
+    else
+    {
+        std::size_t numStates = pathGeom->getStateCount();
+        if (numStates == 0)
+        {
+            OMPL_ERROR("Cannot compute cost of an empty path.");
+            return this->identityCost();
+        }
+        else
+        {
+            // Compute path cost by accumulating the cost along the path
+            Cost cost(this->identityCost());
+            for (std::size_t i = 1; i < numStates; ++i)
+            {
+                const State *s1 = pathGeom->getState(i-1);
+                const State *s2 = pathGeom->getState(i);
+                cost = this->combineCosts(cost, this->motionCost(s1, s2));
+            }
+
+            return cost;
+        }
+    }
 }
 
 bool ompl::base::OptimizationObjective::isCostBetterThan(Cost c1, Cost c2) const
@@ -138,6 +175,12 @@ ompl::base::Cost ompl::base::OptimizationObjective::motionCostHeuristic(const St
 const ompl::base::SpaceInformationPtr& ompl::base::OptimizationObjective::getSpaceInformation() const
 {
     return si_;
+}
+
+ompl::base::InformedStateSamplerPtr ompl::base::OptimizationObjective::allocInformedStateSampler(const StateSpace* space, const ProblemDefinitionPtr probDefn, const Cost* bestCost) const
+{
+    OMPL_WARN("%s: No informed sampling scheme is defined, defaulting to rejection sampling.", description_.c_str());
+    return InformedStateSamplerPtr(new RejectionSampler(space, probDefn, bestCost));
 }
 
 ompl::base::Cost ompl::base::goalRegionCostToGo(const State *state, const Goal *goal)

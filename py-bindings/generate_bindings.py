@@ -557,7 +557,7 @@ class ompl_geometric_generator_t(code_generator_t):
         # solution.
 
         # do this for all planners
-        for planner in ['EST', 'KPIECE1', 'BKPIECE1', 'LBKPIECE1', 'PRM', 'LazyPRM', 'PDST', 'LazyRRT', 'RRT', 'RRTConnect', 'TRRT', 'RRTstar', 'LBTRRT', 'SBL', 'SPARS', 'SPARStwo', 'STRIDE', 'FMT']:
+        for planner in ['EST', 'KPIECE1', 'BKPIECE1', 'LBKPIECE1', 'PRM', 'LazyPRM', 'PDST', 'LazyRRT', 'RRT', 'RRTConnect', 'TRRT', 'RRTstar', 'LBTRRT', 'SBL', 'SPARS', 'SPARStwo', 'STRIDE', 'FMT', 'BITstar']:
             self.ompl_ns.class_(planner).add_registration_code("""
             def("solve", (::ompl::base::PlannerStatus(::ompl::base::Planner::*)( double ))(&::ompl::base::Planner::solve), (bp::arg("solveTime")) )""")
             if planner!='PRM':
@@ -696,6 +696,11 @@ class ompl_util_generator_t(code_generator_t):
         self.std_ns.class_('map<std::string, std::string >').include()
         self.std_ns.class_('map<std::string, std::string >').rename('mapStringToString')
         self.std_ns.class_('vector< ompl::PPM::Color >').rename('vectorPPMColor')
+        # Exclude the ProlateHyperspheroid Class which needs Eigen, and the associated member functions in the RNG
+        self.ompl_ns.class_('ProlateHyperspheroid').exclude()
+        self.ompl_ns.class_('RNG').member_functions('uniformProlateHyperspheroidSurface').exclude()
+        self.ompl_ns.class_('RNG').member_functions('uniformProlateHyperspheroid').exclude()
+
 
 class ompl_morse_generator_t(code_generator_t):
     def __init__(self):
